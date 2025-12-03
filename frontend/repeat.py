@@ -1,2 +1,2 @@
-def repeat(str):
-    return str
+def repeat_message(str):
+    return str[::-1]

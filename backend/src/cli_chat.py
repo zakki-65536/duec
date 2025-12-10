@@ -12,21 +12,24 @@ import argparse
 import subprocess
 import sys
 import shutil
+from rag import load_course_db, retrieve, build_prompt_with_rag, prepare_tfidf_index, retrieve_tfidf
+from prompt_manager import load_prompt_template, list_available_prompts, format_system_instruction
 
 # Try to import langchain's Ollama wrapper if available
-try:
-    from langchain.llms import Ollama as LangchainOllama  # type: ignore
-    LANGCHAIN_AVAILABLE = True
-except Exception:
-    LangchainOllama = None  # type: ignore
-    LANGCHAIN_AVAILABLE = False
+# try:
+# 推奨される書き方
+from langchain_ollama import OllamaLLM # type: ignore
+LANGCHAIN_AVAILABLE = True
+# except Exception:
+#     LangchainOllama = None  # type: ignore
+#     LANGCHAIN_AVAILABLE = False
 
 
 def run_with_langchain(model: str, prompt: str) -> str:
     """Use langchain's Ollama wrapper to generate text."""
     if not LANGCHAIN_AVAILABLE:
         raise RuntimeError("langchain Ollama not available")
-    llm = LangchainOllama(model=model)
+    llm = OllamaLLM(model=model)
     # The LLM object is callable in langchain; call returns string
     return llm(prompt)
 
@@ -76,6 +79,9 @@ def generate(model: str, prompt: str, prefer_langchain: bool = True) -> str:
     return run_with_ollama_cli(model, prompt)
 
 
+# RAG functionality is provided by rag.py and imported above
+
+
 def build_prompt(system: str, history: list, user_input: str) -> str:
     """Simple prompt assembly: include optional system prompt and a short history.
     History is list of tuples (role, text) where role is 'user' or 'assistant'.
@@ -83,7 +89,7 @@ def build_prompt(system: str, history: list, user_input: str) -> str:
     """
     pieces = []
     if system:
-        pieces.append(f"System: {system}\n\n")
+        pieces.append(f"{system}\n\n")
     pieces.append("Conversation:\n")
     for role, text in history:
         if role == "user":
@@ -98,8 +104,14 @@ def main():
     parser = argparse.ArgumentParser(description="Simple CLI chat using local ollama model (langchain + fallback)")
     parser.add_argument("--model", default="dsasai/llama3-elyza-jp-8b", help="Ollama model name (default dsasai/llama3-elyza-jp-8b)")
     parser.add_argument("--system", default="", help="Optional system prompt / instruction for the assistant")
+    available_prompts = " | ".join(list_available_prompts()) or "default"
+    parser.add_argument("--prompt-template", default="default", help=f"Prompt template name (loaded from prompts/ directory). Available: {available_prompts}")
     parser.add_argument("--history-size", type=int, default=6, help="How many previous messages (counted as turns) to include in prompt")
     parser.add_argument("--no-langchain", action="store_true", help="Do not try to use langchain even if installed; use ollama CLI directly")
+    parser.add_argument("--rag", action="store_true", help="Enable simple RAG: retrieve from local JSON DB and include as context")
+    parser.add_argument("--rag-db", default="../data/course_data.json", help="Path to local JSON DB (list of docs with 'id','text','title')")
+    parser.add_argument("--rag-k", type=int, default=3, help="Number of retrieved documents to include")
+    parser.add_argument("--rag-method", choices=["tfidf", "simple"], default="tfidf", help="Retrieval method to use when --rag is enabled")
     args = parser.parse_args()
 
     prefer_langchain = not args.no_langchain
@@ -109,9 +121,27 @@ def main():
         print("langchain Ollama wrapper not available; will use ollama CLI fallback.")
     else:
         print("Forcing ollama CLI usage (no-langchain).")
+    
+    # Load prompt template and format system instruction
+    system_instruction = format_system_instruction(args.prompt_template, args.system)
+    print(f"Using prompt template: {args.prompt_template}")
 
     print("Enter conversation. Type 'exit' or Ctrl-C to quit.")
     history = []  # list of (role, text)
+    # load RAG DB if requested
+    course_db = None
+    rag_index = None
+    if args.rag:
+        course_db = load_course_db(args.rag_db)
+        if course_db is None:
+            print(f"RAG DB not found or invalid at {args.rag_db}; continuing without RAG.")
+            args.rag = False
+        else:
+            if args.rag_method == "tfidf":
+                rag_index = prepare_tfidf_index(course_db)
+                if rag_index is None:
+                    print("TF-IDF index could not be prepared (scikit-learn not available?). Falling back to simple retrieval.")
+                    args.rag_method = "simple"
 
     try:
         while True:
@@ -128,7 +158,14 @@ def main():
 
             # Build prompt from system + last N history turns
             trimmed = history[-args.history_size:]
-            prompt = build_prompt(args.system, trimmed, user_input)
+            if args.rag:
+                if args.rag_method == "tfidf" and rag_index is not None:
+                    retrieved = retrieve_tfidf(user_input, rag_index, k=args.rag_k)
+                else:
+                    retrieved = retrieve(user_input, course_db, k=args.rag_k)
+                prompt = build_prompt_with_rag(system_instruction, trimmed, user_input, retrieved)
+            else:
+                prompt = build_prompt(system_instruction, trimmed, user_input)
 
             try:
                 reply = generate(args.model, prompt, prefer_langchain=prefer_langchain)

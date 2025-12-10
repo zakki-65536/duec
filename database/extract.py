@@ -24,6 +24,7 @@ FIELD_ORDER = [
     "教授名",
     "到達目標",
     "概要",
+    "授業計画",
     "成績評価基準",
     "成績評価結果",
 ]
@@ -57,7 +58,6 @@ def parse_course_block(soup: BeautifulSoup) -> dict:
                 result["曜日・時限"] = m.group(1)
 
             # カッコ以降の部分 → 実施方法（面接/Face-to-face など）
-            # 例: "2024年度 (金曜日1講時) 面接/Face-to-face"
             m2 = re.search(r"\)\s*(.+)$", header_text)
             if m2:
                 method_text = m2.group(1).strip()
@@ -65,7 +65,6 @@ def parse_course_block(soup: BeautifulSoup) -> dict:
                     result["実施方法"] = method_text
 
     # --- 科目名・単位数・開講学期・授業形態 ---
-    # 「2単位/Unit 秋学期/Fall 京田辺/Kyotanabe 講義/Lecture」が入っている td
     course_info_td = None
     for td in soup.select("td.show__content-in"):
         if "単位/Unit" in td.get_text():
@@ -77,7 +76,6 @@ def parse_course_block(soup: BeautifulSoup) -> dict:
         font_tag = course_info_td.find("font")
         if font_tag:
             name = font_tag.get_text(strip=True)
-            # 先頭の丸印などを削る
             name = re.sub(r"^[○△●◎◇◆☆★\s]+", "", name)
             result["科目名"] = name
 
@@ -109,10 +107,30 @@ def parse_course_block(soup: BeautifulSoup) -> dict:
             if m:
                 result["授業形態"] = m.group(1)
 
-    # --- 教授名（教員プロフィールへのリンクから） ---
+    # --- 教授名（リンク優先、無ければ文字列） ---
     prof_link = soup.select_one('td.show__content-in a[href*="kendb.doshisha.ac.jp/profile"]')
     if prof_link:
         result["教授名"] = prof_link.get_text(strip=True)
+    else:
+        # 典型的には show__content-in 内の小さな表の右寄せセルに教授名が入る
+        prof_td = soup.select_one('td.show__content-in table td[style*="text-align:right"]')
+        if prof_td:
+            name = prof_td.get_text(" ", strip=True)
+            name = re.sub(r"\s+", " ", name).strip()
+            # 明らかに教授名ではない文字列を弾く保険
+            if name and "単位/Unit" not in name and "ディプロマ" not in name:
+                result["教授名"] = name
+
+        # 最後の保険：氏名っぽい日本語パターン
+        if not result["教授名"]:
+            for td in soup.select("td.show__content-in"):
+                t = td.get_text(" ", strip=True)
+                if not t or "単位/Unit" in t:
+                    continue
+                m = re.search(r"[一-龥々]{1,10}[　 ]+[一-龥々]{1,10}", t)
+                if m:
+                    result["教授名"] = m.group(0).strip()
+                    break
 
     return result
 
@@ -158,7 +176,6 @@ def parse_evaluation_criteria(soup: BeautifulSoup):
             "割合": tds[1].get_text(strip=True),
             "詳細": tds[2].get_text(strip=True),
         }
-        # 完全に空の行は飛ばす
         if any(item.values()):
             items.append(item)
 
@@ -187,7 +204,6 @@ def parse_grade_results(soup: BeautifulSoup):
     if len(rows) < 3:
         return None
 
-    # 3 行目がデータ行（登録者数, A, B, C, D, F, 他, 評点平均値, 備考）
     data_tds = rows[2].find_all("td")
     if len(data_tds) < 9:
         return None
@@ -208,6 +224,49 @@ def parse_grade_results(soup: BeautifulSoup):
     return dict(zip(keys, values))
 
 
+def parse_schedule(soup: BeautifulSoup):
+    """
+    ＜授業計画/Schedule＞から
+    [
+      {"授業回": "1", "内容": "..."},
+      ...
+    ]
+    を返す。
+    """
+    table = soup.find("table", class_="show__schedule")
+    if not table:
+        return None
+
+    rows = table.find_all("tr")
+    if len(rows) <= 3:
+        return None
+
+    # 先頭3行がヘッダの前提
+    data_rows = rows[3:]
+
+    items = []
+    i = 0
+    # 週ごとに 3 行セット（1行目: 回など/ 2行目: 内容 / 3行目: 授業時間外学習）
+    while i + 1 < len(data_rows):
+        r1 = data_rows[i]
+        r2 = data_rows[i + 1]
+
+        tds1 = r1.find_all("td")
+        if len(tds1) < 2:
+            i += 1
+            continue
+
+        number_text = tds1[1].get_text(" ", strip=True)
+        contents_text = r2.get_text(" ", strip=True)
+
+        if number_text or contents_text:
+            items.append({"授業回": number_text, "内容": contents_text})
+
+        i += 3
+
+    return items or None
+
+
 def parse_syllabus_html(path: Path) -> dict:
     """
     単一 HTML ファイルから必要な情報を dict で返す。
@@ -219,16 +278,13 @@ def parse_syllabus_html(path: Path) -> dict:
 
     base = parse_course_block(soup)
 
-    # 概要
     overview = extract_section_text(soup, "＜概要")
-    # 到達目標
     goals = extract_section_text(soup, "＜到達目標")
 
-    # 成績評価基準
     eval_criteria = parse_evaluation_criteria(soup)
-
-    # 成績評価結果
     grade_results = parse_grade_results(soup)
+
+    schedule = parse_schedule(soup)
 
     record = {
         "科目名": base.get("科目名"),
@@ -240,6 +296,7 @@ def parse_syllabus_html(path: Path) -> dict:
         "教授名": base.get("教授名"),
         "到達目標": goals,
         "概要": overview,
+        "授業計画": schedule,
         "成績評価基準": eval_criteria,
         "成績評価結果": grade_results,
     }
@@ -263,8 +320,10 @@ def main():
         json.dump(all_records, f, ensure_ascii=False, indent=2)
 
     # --- CSV 出力 ---
+    # Excel で文字化けしにくい UTF-8 with BOM
+    # もし環境的に Shift_JIS が必要なら "cp932" に変更
     csv_path = SYLLABUS_DIR / "syllabus_parsed.csv"
-    with csv_path.open("w", newline="", encoding="utf-8") as f:
+    with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=FIELD_ORDER)
         writer.writeheader()
 
@@ -272,14 +331,13 @@ def main():
             row = {}
             for key in FIELD_ORDER:
                 val = rec.get(key)
-                # 成績評価基準 / 成績評価結果 は list/dict → JSON 文字列に変換
-                if key in ("成績評価基準", "成績評価結果"):
-                    if val is None:
-                        row[key] = ""
-                    else:
-                        row[key] = json.dumps(val, ensure_ascii=False)
+
+                # list/dict 系は JSON 文字列に変換して1セルに入れる
+                if key in ("成績評価基準", "成績評価結果", "授業計画"):
+                    row[key] = "" if val is None else json.dumps(val, ensure_ascii=False)
                 else:
                     row[key] = "" if val is None else val
+
             writer.writerow(row)
 
     print(f"JSON: {json_path}")

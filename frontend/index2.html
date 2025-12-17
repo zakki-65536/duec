@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DUEC - 履修登録支援対話システム</title>
+    <link
+      rel="stylesheet"
+      href="assets/css/reset.css"
+    />
+    
+
+    <!-- PyScript -->
+    <link
+      rel="stylesheet"
+      href="https://pyscript.net/releases/2024.11.1/core.css"
+    />
+    <script
+      type="module"
+      src="https://pyscript.net/releases/2024.11.1/core.js"
+    ></script>
+
+    <style>
+        header {
+            margin-left: 0.5cm;
+            margin-right: 0.5cm;
+            background-color: #3f1a55; /* 濃い紫色 */
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            height: 80px;
+        }
+
+        header img {
+            height: 100px; /* ロゴのサイズ調整 */
+            margin-right: 20px;
+        }
+
+        main {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 100px); /* 画面全体からヘッダーとフッターを引く */
+            margin-left: 0.5cm;
+            margin-right: 0.5cm;
+            padding: 20px;
+            background-color: #f0e6f2; /* 背景色 (淡いピンク/紫) */
+            position: relative;
+        }
+
+        form {
+            display: flex;
+            align-items: flex-end;
+            padding: 10px 0;
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+
+            position: sticky;
+            bottom: 0;
+        }
+
+        .input {
+        flex-grow: 1;
+        display: flex;
+        gap: 5px;
+    }
+
+        form input[type="text"] {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        form input[type="button"] {
+            margin-left: 10px;
+            padding: 10px 20px;
+            border: none;
+            background-color: #6a1b9a; /* 紫色 */
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .character {
+            width: 120px; /* 画像のサイズ（調整してください） */
+            height: auto;
+            margin-bottom: -5px; /* 入力欄との微調整 */
+        }
+
+        #output {
+            /* メッセージ表示エリアを可変にし、ここだけをスクロールさせる */
+            flex-grow: 1;
+            overflow-y: auto; 
+            margin-bottom: 10px;
+        }
+
+    </style>
+  </head>
+  <body>
+    <header>
+      <img src="assets/img/duec-logo.png" alt="DUEC Logo">
+    </header>
+
+    <main>
+      <div id="output"></div>
+      <form>
+        <img src="assets/img/usagi.png" alt="うさぎ" class="character">
+        <div class="input">
+            <input type="text" name="message" placeholder="DUECに質問してみよう">
+            <input type="button" value="送信" id="runBtn">
+        </div>
+      </form>
+    </main>
+
+    <footer>
+      
+    </footer>
+    
+    
+    <!-- PyScriptの設定 -->
+    <py-config>
+      packages = [] 
+      [[fetch]] 
+      from = "repeat.py" 
+      to_folder = "./"
+    </py-config>
+    <script>
+      
+    </script>
+    <!-- Pythonコード -->
+    <py-script>
+      from repeat import repeat_message
+      from js import document 
+      import pyodide_js
+      from pyodide.ffi import create_proxy 
+      pyodide_js.setDebug(True)
+      allMessage=[]
+      def show(allMessage):
+        allMessageText=""
+        for text in allMessage:
+          allMessageText+=text
+          allMessageText+="\n"
+        document.getElementById("output").innerText = allMessageText
+      def run(): 
+        formElements = document.forms[0];
+        message = formElements.message.value
+        formElements.message.value=""
+        allMessage.append("自分　　: "+message)
+        show(allMessage)
+
+        result = repeat_message(message)
+        allMessage.append("システム: "+result)
+        show(allMessage)
+
+      def on_click(evt): 
+        run() 
+      btn = document.getElementById("runBtn")
+      on_click_proxy = create_proxy(on_click)
+      btn.addEventListener("click", on_click_proxy)
+    </py-script>
+  </body>
+</html>

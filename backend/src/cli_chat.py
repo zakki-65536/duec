@@ -109,7 +109,7 @@ def main():
     parser.add_argument("--history-size", type=int, default=6, help="How many previous messages (counted as turns) to include in prompt")
     parser.add_argument("--no-langchain", action="store_true", help="Do not try to use langchain even if installed; use ollama CLI directly")
     parser.add_argument("--rag", action="store_true", help="Enable simple RAG: retrieve from local JSON DB and include as context")
-    parser.add_argument("--rag-db", default="../data/course_data.json", help="Path to local JSON DB (list of docs with 'id','text','title')")
+    parser.add_argument("--rag-db", default="../database/syllabus_インテリ.json", help="Path to local JSON DB (list of docs with 'id','text','title')")
     parser.add_argument("--rag-k", type=int, default=3, help="Number of retrieved documents to include")
     parser.add_argument("--rag-method", choices=["tfidf", "simple"], default="tfidf", help="Retrieval method to use when --rag is enabled")
     args = parser.parse_args()
@@ -129,18 +129,21 @@ def main():
     print("Enter conversation. Type 'exit' or Ctrl-C to quit.")
     history = []  # list of (role, text)
     # load RAG DB if requested
-    course_db = None
+    course_db_wrapper = None # 変数名を変更して意図を明確化
     rag_index = None
     if args.rag:
-        course_db = load_course_db(args.rag_db)
-        if course_db is None:
+        # load_course_db は dict (wrapper) を返すようになりました
+        course_db_wrapper = load_course_db(args.rag_db)
+        
+        if course_db_wrapper is None:
             print(f"RAG DB not found or invalid at {args.rag_db}; continuing without RAG.")
             args.rag = False
         else:
             if args.rag_method == "tfidf":
-                rag_index = prepare_tfidf_index(course_db)
+                # ラッパーごと渡す
+                rag_index = prepare_tfidf_index(course_db_wrapper)
                 if rag_index is None:
-                    print("TF-IDF index could not be prepared (scikit-learn not available?). Falling back to simple retrieval.")
+                    print("TF-IDF index could not be prepared. Falling back to simple retrieval.")
                     args.rag_method = "simple"
 
     try:
@@ -160,9 +163,14 @@ def main():
             trimmed = history[-args.history_size:]
             if args.rag:
                 if args.rag_method == "tfidf" and rag_index is not None:
+                    # rag_index には docs も metadata も含まれている
                     retrieved = retrieve_tfidf(user_input, rag_index, k=args.rag_k)
                 else:
-                    retrieved = retrieve(user_input, course_db, k=args.rag_k)
+                    # simple検索の場合も wrapper を渡すように rag.py 側で調整済みだが
+                    # retrieve関数には wrapper を渡す
+                    retrieved = retrieve(user_input, course_db_wrapper, k=args.rag_k)
+                
+                # プロンプト作成
                 prompt = build_prompt_with_rag(system_instruction, trimmed, user_input, retrieved)
             else:
                 prompt = build_prompt(system_instruction, trimmed, user_input)

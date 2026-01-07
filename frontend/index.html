@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DUEC - 履修登録支援対話システム</title>
+    <link
+      rel="stylesheet"
+      href="assets/css/reset.css"
+    />
+    <link
+      rel="stylesheet"
+      href="assets/css/style.css"
+    />
+
+    <!-- PyScript -->
+    <link
+      rel="stylesheet"
+      href="https://pyscript.net/releases/2024.11.1/core.css"
+    />
+    <script
+      type="module"
+      src="https://pyscript.net/releases/2024.11.1/core.js"
+    ></script>
+  </head>
+  <body>
+    <header>
+      <h1>動作確認 オウム返しチャット</h1>
+    </header>
+
+    <main>
+      <div id="output"></div>
+      <form>
+        <input type="text" name="message">
+        <input type="button" value="送信" id="runBtn">
+      </form>
+    </main>
+
+    <footer>
+      
+    </footer>
+    
+    
+    <!-- PyScriptの設定 -->
+    <py-config>
+      packages = [] 
+      [[fetch]] 
+      from = "repeat.py" 
+      to_folder = "./"
+    </py-config>
+    <script>
+      
+    </script>
+    <!-- Pythonコード -->
+    <py-script>
+      from repeat import repeat_message
+      from js import document 
+      import pyodide_js
+      from pyodide.ffi import create_proxy 
+      pyodide_js.setDebug(True)
+      allMessage=[]
+      def show(allMessage):
+        allMessageText=""
+        for text in allMessage:
+          allMessageText+=text
+          allMessageText+="\n"
+        document.getElementById("output").innerText = allMessageText
+      def run(): 
+        formElements = document.forms[0];
+        message = formElements.message.value
+        formElements.message.value=""
+        allMessage.append("自分　　: "+message)
+        show(allMessage)
+
+        result = repeat_message(message)
+        allMessage.append("システム: "+result)
+        show(allMessage)
+
+      def on_click(evt): 
+        run() 
+      btn = document.getElementById("runBtn")
+      on_click_proxy = create_proxy(on_click)
+      btn.addEventListener("click", on_click_proxy)
+    </py-script>
+  </body>
+</html>

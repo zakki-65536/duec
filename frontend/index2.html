@@ -4,97 +4,174 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DUEC - 履修登録支援対話システム</title>
-    <link
-      rel="stylesheet"
-      href="assets/css/reset.css"
-    />
-    
+    <link rel="stylesheet" href="assets/css/reset.css" />
 
     <!-- PyScript -->
-    <link
-      rel="stylesheet"
-      href="https://pyscript.net/releases/2024.11.1/core.css"
-    />
-    <script
-      type="module"
-      src="https://pyscript.net/releases/2024.11.1/core.js"
-    ></script>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script>
 
     <style>
-        header {
-            margin-left: 0.5cm;
-            margin-right: 0.5cm;
-            background-color: #3f1a55; /* 濃い紫色 */
-            padding: 10px 20px;
-            display: flex;
-            align-items: center;
-            height: 80px;
-        }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      }
 
-        header img {
-            height: 100px; /* ロゴのサイズ調整 */
-            margin-right: 20px;
-        }
+      header {
+        margin-left: 0.5cm;
+        margin-right: 0.5cm;
+        background-color: #3f1a55;
+        padding: 10px 20px;
+        display: flex;
+        align-items: center;
+        height: 80px;
+      }
 
-        main {
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 100px); /* 画面全体からヘッダーとフッターを引く */
-            margin-left: 0.5cm;
-            margin-right: 0.5cm;
-            padding: 20px;
-            background-color: #f0e6f2; /* 背景色 (淡いピンク/紫) */
-            position: relative;
-        }
+      header img {
+        height: 100px;
+        margin-right: 20px;
+      }
 
-        form {
-            display: flex;
-            align-items: flex-end;
-            padding: 10px 0;
-            max-width: 600px;
-            margin: 0 auto;
-            width: 100%;
+      main {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 100px);
+        margin-left: 0.5cm;
+        margin-right: 0.5cm;
+        padding: 20px;
+        background-color: #f0e6f2;
+        position: relative;
+      }
 
-            position: sticky;
-            bottom: 0;
-        }
+      #output {
+        flex-grow: 1;
+        overflow-y: auto;
+        margin-bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+      }
 
-        .input {
+      .message-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        max-width: 100%;
+      }
+
+      /* ユーザー行は右寄せ */
+      .message-row.user-row {
+        align-self: flex-end;
+        flex-direction: row-reverse;
+      }
+
+      /* システム行は左寄せ*/
+      .message-row.system-row {
+        align-self: flex-start;
+        flex-direction: row;
+      }
+
+      /* 左側に配置する画像 */
+      .avatar-left {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        object-fit: cover;
+        flex: 0 0 48px; /* 固定幅 */
+        align-self: flex-start; /* 上寄せして左上に配置する */
+        box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+        background: #fff;
+      }
+
+      /* メッセージバブル共通 */
+      .message {
+        max-width: 75%;
+        padding: 12px 14px;
+        border-radius: 14px;
+        line-height: 1.4;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        word-break: break-word;
+        white-space: pre-wrap;
+      }
+
+      /* システム（左寄せ） */
+      .message.system {
+        background-color: #ffffff;
+        color: #111;
+        border-top-left-radius: 4px;
+        border-top-right-radius: 14px;
+        border-bottom-right-radius: 14px;
+        border-bottom-left-radius: 14px;
+      }
+
+      /* ユーザー（右寄せ） */
+      .message.user {
+        background: linear-gradient(135deg, #6a1b9a, #8e2fbf);
+        color: #fff;
+        border-top-right-radius: 4px;
+        border-top-left-radius: 14px;
+        border-bottom-left-radius: 14px;
+        border-bottom-right-radius: 14px;
+      }
+
+      /* 入力フォーム */
+      form {
+        display: flex;
+        align-items: flex-end;
+        padding: 10px 0;
+        max-width: 960px;
+        margin: 0 auto;
+        width: 100%;
+        position: sticky;
+        bottom: 0;
+        background: transparent;
+        gap: 10px;
+      }
+
+      .input {
         flex-grow: 1;
         display: flex;
-        gap: 5px;
-    }
+        gap: 8px;
+      }
 
-        form input[type="text"] {
-            flex-grow: 1;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            font-size: 16px;
-        }
+      form input[type="text"] {
+        flex-grow: 1;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        font-size: 16px;
+        background: white;
+      }
 
-        form input[type="button"] {
-            margin-left: 10px;
-            padding: 10px 20px;
-            border: none;
-            background-color: #6a1b9a; /* 紫色 */
-            color: white;
-            border-radius: 5px;
-            cursor: pointer;
-        }
+      form input[type="button"] {
+        padding: 10px 20px;
+        border: none;
+        background-color: #6a1b9a;
+        color: white;
+        border-radius: 5px;
+        cursor: pointer;
+      }
 
-        .character {
-            width: 120px; /* 画像のサイズ（調整してください） */
-            height: auto;
-            margin-bottom: -5px; /* 入力欄との微調整 */
-        }
+      .character {
+        width: 120px;
+        height: auto;
+        margin-bottom: -5px;
+        transform: translateX(10px);
+      }
 
-        #output {
-            /* メッセージ表示エリアを可変にし、ここだけをスクロールさせる */
-            flex-grow: 1;
-            overflow-y: auto; 
-            margin-bottom: 10px;
-        }
+      /* スクロールバー */
+      #output::-webkit-scrollbar {
+        width: 10px;
+      }
+      #output::-webkit-scrollbar-thumb {
+        background: rgba(0,0,0,0.12);
+        border-radius: 10px;
+      }
+
+      @media (max-width: 480px) {
+        .avatar-left { width: 40px; height: 40px; flex: 0 0 40px; }
+        .message { max-width: 82%; padding: 10px; }
+      }
 
     </style>
   </head>
@@ -104,61 +181,91 @@
     </header>
 
     <main>
-      <div id="output"></div>
-      <form>
+      <div id="output" aria-live="polite"></div>
+      <form onsubmit="return false;">
         <img src="assets/img/usagi.png" alt="うさぎ" class="character">
         <div class="input">
-            <input type="text" name="message" placeholder="DUECに質問してみよう">
-            <input type="button" value="送信" id="runBtn">
+          <input type="text" name="message" placeholder="DUECに質問してみよう" autocomplete="off" />
+          <input type="button" value="送信" id="runBtn" />
         </div>
       </form>
     </main>
 
-    <footer>
-      
-    </footer>
-    
-    
+    <footer></footer>
+
     <!-- PyScriptの設定 -->
     <py-config>
-      packages = [] 
-      [[fetch]] 
-      from = "repeat.py" 
+      packages = []
+      [[fetch]]
+      from = "repeat.py"
       to_folder = "./"
     </py-config>
-    <script>
-      
-    </script>
-    <!-- Pythonコード -->
+
     <py-script>
       from repeat import repeat_message
-      from js import document 
-      import pyodide_js
-      from pyodide.ffi import create_proxy 
-      pyodide_js.setDebug(True)
-      allMessage=[]
-      def show(allMessage):
-        allMessageText=""
-        for text in allMessage:
-          allMessageText+=text
-          allMessageText+="\n"
-        document.getElementById("output").innerText = allMessageText
-      def run(): 
-        formElements = document.forms[0];
-        message = formElements.message.value
-        formElements.message.value=""
-        allMessage.append("自分　　: "+message)
-        show(allMessage)
+      from js import document
+      from pyodide.ffi import create_proxy
 
-        result = repeat_message(message)
-        allMessage.append("システム: "+result)
-        show(allMessage)
+      allMessages = []
 
-      def on_click(evt): 
-        run() 
+      def render():
+        out = document.getElementById("output")
+        out.innerHTML = ""
+        for role, text in allMessages:
+          row = document.createElement("div")
+          row.className = "message-row " + ("user-row" if role == "user" else "system-row")
+
+          if role == "system":
+            img = document.createElement("img")
+            img.className = "avatar-left"
+            img.src = "assets/img/usagi_system.png"
+            row.appendChild(img)
+
+            bubble = document.createElement("div")
+            bubble.className = "message system"
+            bubble.innerText = text
+            row.appendChild(bubble)
+
+          else:
+            bubble = document.createElement("div")
+            bubble.className = "message user"
+            bubble.innerText = text
+            row.appendChild(bubble)
+
+          out.appendChild(row)
+
+        out.scrollTop = out.scrollHeight
+
+      def run(evt=None):
+        form = document.forms[0]
+        message = form.message.value.strip()
+        if not message:
+          return
+        form.message.value = ""
+        allMessages.append(("user", message))
+        render()
+        try:
+          result = repeat_message(message)
+        except Exception as e:
+          result = "システムエラー: " + str(e)
+        allMessages.append(("system", result))
+        render()
+
       btn = document.getElementById("runBtn")
-      on_click_proxy = create_proxy(on_click)
+      on_click_proxy = create_proxy(run)
       btn.addEventListener("click", on_click_proxy)
+
+      input_el = document.forms[0].message
+      def on_keydown(evt):
+        try:
+          key = evt.key
+        except:
+          key = None
+        if key == "Enter":
+          run()
+          evt.preventDefault()
+      on_keydown_proxy = create_proxy(on_keydown)
+      input_el.addEventListener("keydown", on_keydown_proxy)
     </py-script>
   </body>
 </html>

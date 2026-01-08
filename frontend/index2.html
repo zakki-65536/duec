@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="assets/css/reset.css" />
 
     <!-- PyScript -->
-    <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css" />
-    <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script>
+    <!-- <link rel="stylesheet" href="https://pyscript.net/releases/2024.11.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2024.11.1/core.js"></script> -->
 
     <style>
       body {
@@ -193,79 +193,111 @@
 
     <footer></footer>
 
-    <!-- PyScriptの設定 -->
-    <py-config>
-      packages = []
-      [[fetch]]
-      from = "repeat.py"
-      to_folder = "./"
-    </py-config>
+    <script>
+        // ====== PyScript の allMessages をそのままJSへ ======
+        const allMessages = [];
 
-    <py-script>
-      from repeat import repeat_message
-      from js import document
-      from pyodide.ffi import create_proxy
+        function render() {
+          const out = document.getElementById("output");
+          out.innerHTML = "";
 
-      allMessages = []
+          for (const [role, text] of allMessages) {
+            const row = document.createElement("div");
+            row.className = "message-row " + (role === "user" ? "user-row" : "system-row");
 
-      def render():
-        out = document.getElementById("output")
-        out.innerHTML = ""
-        for role, text in allMessages:
-          row = document.createElement("div")
-          row.className = "message-row " + ("user-row" if role == "user" else "system-row")
+            if (role === "system") {
+              const img = document.createElement("img");
+              img.className = "avatar-left";
+              img.src = "assets/img/usagi_system.png";
+              row.appendChild(img);
 
-          if role == "system":
-            img = document.createElement("img")
-            img.className = "avatar-left"
-            img.src = "assets/img/usagi_system.png"
-            row.appendChild(img)
+              const bubble = document.createElement("div");
+              bubble.className = "message system";
+              bubble.innerText = text;
+              row.appendChild(bubble);
+            } else {
+              const bubble = document.createElement("div");
+              bubble.className = "message user";
+              bubble.innerText = text;
+              row.appendChild(bubble);
+            }
 
-            bubble = document.createElement("div")
-            bubble.className = "message system"
-            bubble.innerText = text
-            row.appendChild(bubble)
+            out.appendChild(row);
+          }
 
-          else:
-            bubble = document.createElement("div")
-            bubble.className = "message user"
-            bubble.innerText = text
-            row.appendChild(bubble)
+          out.scrollTop = out.scrollHeight;
+        }
 
-          out.appendChild(row)
+        // UIの履歴(role: user/system) -> API用(user/assistant) に変換
+        function toApiHistory(history) {
+          return history.map(([role, text]) => {
+            const apiRole = (role === "system") ? "assistant" : role;
+            return [apiRole, text];
+          });
+        }
 
-        out.scrollTop = out.scrollHeight
+        // GETリクエスト: /chat?history=...&new_input=...
+        async function doGet(history, newMessage, baseUrl = "http://127.0.0.1:5000/chat") {
+          const apiHistory = toApiHistory(history);
 
-      def run(evt=None):
-        form = document.forms[0]
-        message = form.message.value.strip()
-        if not message:
-          return
-        form.message.value = ""
-        allMessages.append(("user", message))
-        render()
-        try:
-          result = repeat_message(message)
-        except Exception as e:
-          result = "システムエラー: " + str(e)
-        allMessages.append(("system", result))
-        render()
+          // 例URLと同様に、history は JSON文字列で渡す
+          // encodeURIComponent で安全にURLエンコード
+          const historyParam = encodeURIComponent(JSON.stringify(apiHistory));
+          const newInputParam = encodeURIComponent(newMessage);
 
-      btn = document.getElementById("runBtn")
-      on_click_proxy = create_proxy(run)
-      btn.addEventListener("click", on_click_proxy)
+          const url = `${baseUrl}?history=${historyParam}&new_input=${newInputParam}`;
 
-      input_el = document.forms[0].message
-      def on_keydown(evt):
-        try:
-          key = evt.key
-        except:
-          key = None
-        if key == "Enter":
-          run()
-          evt.preventDefault()
-      on_keydown_proxy = create_proxy(on_keydown)
-      input_el.addEventListener("keydown", on_keydown_proxy)
-    </py-script>
+          const resp = await fetch(url, { method: "GET" });
+          if (!resp.ok) {
+            const body = await resp.text().catch(() => "");
+            throw new Error(`HTTP ${resp.status} ${resp.statusText} ${body}`.trim());
+          }
+          // このAPIはテキストを返す想定
+          return await resp.text();
+        }
+
+        // ====== PyScript の run() をそのままJSへ（async化） ======
+        async function run(evt = null) {
+          const form = document.forms[0];
+          const message = form.message.value.trim();
+          if (!message) return;
+
+          // 例URLと同様に、今回入力は history には入れず new_input に渡す
+          const historyForApi = allMessages.slice();
+
+          form.message.value = "";
+          allMessages.push(["user", message]);
+          render();
+
+          let result;
+          try {
+            // APIが返すテキストを result に格納
+            result = await doGet(historyForApi, message);
+          } catch (e) {
+            result = "システムエラー: " + (e && e.message ? e.message : String(e));
+          }
+
+          allMessages.push(["system", result]);
+          render();
+        }
+
+        // ====== イベント設定（PyScriptの addEventListener 相当） ======
+        document.addEventListener("DOMContentLoaded", () => {
+          const btn = document.getElementById("runBtn");
+          btn.addEventListener("click", run);
+
+          const inputEl = document.forms[0].message;
+          inputEl.addEventListener("keydown", (evt) => {
+            if (evt.key === "Enter") {
+              run();
+              evt.preventDefault();
+            }
+          });
+        });
+
+    </script>
+
+    
+
   </body>
 </html>

@@ -34,7 +34,7 @@ def run_with_ollama_cli(model: str, prompt: str) -> str:
     
     cmd_with_prompt = ["ollama", "run", model, "--prompt", prompt]
     try:
-        res = subprocess.run(cmd_with_prompt, capture_output=True, text=True, check=True)
+        res = subprocess.run(cmd_with_prompt, capture_output=True, text=True, check=True, encoding="utf-8",errors="strict")
         return res.stdout.strip()
     except subprocess.CalledProcessError as e:
         stderr = (e.stderr or "").lower()
@@ -44,7 +44,7 @@ def run_with_ollama_cli(model: str, prompt: str) -> str:
         if "unknown flag" in combined or "unrecognized option" in combined or "--prompt" in combined:
             cmd_stdin = ["ollama", "run", model]
             try:
-                res2 = subprocess.run(cmd_stdin, input=prompt, capture_output=True, text=True, check=True)
+                res2 = subprocess.run(cmd_stdin, input=prompt, capture_output=True, text=True, check=True,encoding="utf-8",errors="strict")
                 return res2.stdout.strip()
             except subprocess.CalledProcessError as e2:
                 out2 = e2.stdout.strip() if e2.stdout else e2.stderr.strip()

@@ -28,11 +28,11 @@ def get_ai_response_one_shot(current_history, new_input):
     response = bot.chat(new_input, history=current_history)
     return response
 
-history = [
-    ("user", "アルゴリズムとデータ構造の評価方法を教えて。"), 
-    ("assistant", "アルゴリズムとデータ構造の評価方法は以下の通りです。\n- **中間評価**: 30%\n- **期末試験**: 30%\n- **プログラミング課題**: 40%\nこれらが総合的に評価されます。"),
-    ("user", "アルゴリズムとデータ構造はどの先生の授業ですか？"),
-    ("assistant", "アルゴリズムとデータ構造の授業は、芳賀 博英教授の「【情報1】 アルゴリズムとデータ構造」です。")]
-new_input = "この授業の授業情報を教えて。" 
-response = get_ai_response_one_shot(history, new_input)
-print("AI Response:", response)
+# history = [
+#     ("user", "アルゴリズムとデータ構造の評価方法を教えて。"), 
+#     ("assistant", "アルゴリズムとデータ構造の評価方法は以下の通りです。\n- **中間評価**: 30%\n- **期末試験**: 30%\n- **プログラミング課題**: 40%\nこれらが総合的に評価されます。"),
+#     ("user", "アルゴリズムとデータ構造はどの先生の授業ですか？"),
+#     ("assistant", "アルゴリズムとデータ構造の授業は、芳賀 博英教授の「【情報1】 アルゴリズムとデータ構造」です。")]
+# new_input = "この授業の授業情報を教えて。" 
+# response = get_ai_response_one_shot(history, new_input)
+# print("AI Response:", response)

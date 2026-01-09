@@ -129,13 +129,17 @@ class ChatSession:
 
         # Build prompt from system + last N history turns
         trimmed_history = active_history[-self.args.history_size:]
+
+        user_messages = [msg for role, msg in trimmed_history if role == "user"]
+        history_user_text = ", ".join(user_messages)
+        combined_query = f"{history_user_text}\n{user_input}" if history_user_text else user_input
         
         # RAG or Normal Prompt Building
         if self.args.rag:
             if self.args.rag_method == "tfidf" and self.rag_index is not None:
-                retrieved = retrieve_tfidf(user_input, self.rag_index, k=self.args.rag_k)
+                retrieved = retrieve_tfidf(combined_query, self.rag_index, k=self.args.rag_k)
             else:
-                retrieved = retrieve(user_input, self.course_db_wrapper, k=self.args.rag_k)
+                retrieved = retrieve(combined_query, self.course_db_wrapper, k=self.args.rag_k)
             
             prompt = build_prompt_with_rag(self.system_instruction, trimmed_history, user_input, retrieved)
         else:

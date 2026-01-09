@@ -38,7 +38,7 @@ def chat():
     if not new_input:
         return jsonify(error="new_input is required"), 400
 
-    current_history_str = request.args.get("current_history", default="[]", type=str)
+    current_history_str = request.args.get("history", default="[]", type=str)
     try:
         history = parse_history_param(current_history_str)
     except Exception as e:

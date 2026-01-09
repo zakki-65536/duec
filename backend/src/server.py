@@ -1,11 +1,13 @@
 # app.py
 import json
 from flask import Flask, request, Response, jsonify
+from flask_cors import CORS
 
 # run_chat.py を編集せずにそのまま利用（import時に末尾のprintが走る点に注意）
 import run_chat
 
 app = Flask(__name__)
+CORS(app)
 
 def parse_history_param(current_history_str: str):
     """
@@ -49,7 +51,13 @@ def chat():
 
 @app.get("/healthz")
 def healthz():
-    return jsonify(status="ok")
+    return 'status="ok"'
+
+@app.after_request
+def add_cors_headers(resp):
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 if __name__ == "__main__":
     app.run(debug=True)
+

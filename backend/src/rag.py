@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import csv
 
 # scikit-learnがインストールされていない場合のエラーハンドリング
 try:
@@ -9,6 +10,127 @@ try:
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
+
+def load_course_db_from_csv(db_path: str):
+    """
+    シラバス形式のCSVファイルを読み込み、RAG検索用に整形してリストとして返します。
+    ヘッダーの余計な空白やBOMを自動で処理し、JSON形式のカラムをパースしてテキスト化します。
+    """
+    if not os.path.exists(db_path):
+        print(f"Error: Database file not found at {db_path}")
+        return None
+    
+    try:
+        # utf-8-sig を使うことでBOM(Byte Order Mark)を自動で除去します
+        with open(db_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+            # csv.DictReaderを使用して辞書形式で読み込む
+            reader = csv.DictReader(f)
+            
+            # ヘッダー（カラム名）から前後の空白を削除して正規化
+            if reader.fieldnames:
+                reader.fieldnames = [name.strip() for name in reader.fieldnames]
+            
+            processed_data = []
+            known_professors = set()
+
+            for row in reader:
+                # 行データの前後の空白を削除
+                item = {k: (v.strip() if v else "") for k, v in row.items() if k}
+                
+                # 「科目名」がない行はスキップ
+                if not item.get("科目名"):
+                    continue
+
+                # --- メタデータの収集 ---
+                prof_name = item.get("教授名", "").strip()
+                if prof_name:
+                    known_professors.add(prof_name)
+                    # 検索揺らぎ対応（スペース除去）
+                    known_professors.add(prof_name.replace(" ", "").replace("　", ""))
+
+                # --- テキスト構築 (RAG検索対象) ---
+                title = item.get("科目名", "名称不明")
+                text_parts = []
+                
+                text_parts.append(f"【科目名】 {title}")
+                if item.get("学科"):
+                    text_parts.append(f"【学科】 {item['学科']}")
+                if prof_name:
+                    text_parts.append(f"【担当教授】 {prof_name}")
+                
+                basic_info = []
+                if item.get("開講学期"): basic_info.append(item['開講学期'])
+                if item.get("曜日・時限"): basic_info.append(item['曜日・時限'])
+                if item.get("単位数"): basic_info.append(f"{item['単位数']}単位")
+                if item.get("授業形態"): basic_info.append(item['授業形態'])
+                if basic_info:
+                    text_parts.append(f"【基本情報】 {' / '.join(basic_info)}")
+                
+                if item.get("概要"):
+                    text_parts.append(f"【概要】\n{item['概要']}")
+                if item.get("到達目標"):
+                    text_parts.append(f"【到達目標】\n{item['到達目標']}")
+
+                # 授業計画の処理（JSON文字列であればパースして箇条書きにする）
+                plan_raw = item.get("授業計画", "")
+                if plan_raw and plan_raw.startswith("["):
+                    try:
+                        plans = json.loads(plan_raw)
+                        text_parts.append("【授業計画】")
+                        for plan in plans:
+                            text_parts.append(f"  第{plan.get('授業回', '?')}回: {plan.get('内容', '')}")
+                    except:
+                        text_parts.append(f"【授業計画】\n{plan_raw}")
+                elif plan_raw:
+                    text_parts.append(f"【授業計画】\n{plan_raw}")
+
+                # 成績評価基準の処理
+                eval_raw = item.get("成績評価基準", "")
+                if eval_raw and eval_raw.startswith("["):
+                    try:
+                        evals = json.loads(eval_raw)
+                        text_parts.append("【成績評価基準】")
+                        for crit in evals:
+                            text_parts.append(f"  - {crit.get('項目', '')} ({crit.get('割合', '')}): {crit.get('詳細', '')}")
+                    except:
+                        text_parts.append(f"【成績評価基準】\n{eval_raw}")
+                elif eval_raw:
+                    text_parts.append(f"【成績評価基準】\n{eval_raw}")
+
+                # 成績評価結果の処理 (成績分布など)
+                res_raw = item.get("成績評価結果", "")
+                if res_raw and res_raw.startswith("{"):
+                    try:
+                        res = json.loads(res_raw)
+                        res_summary = ", ".join([f"{k}: {v}" for k, v in res.items()])
+                        text_parts.append(f"【成績実績】 {res_summary}")
+                    except:
+                        pass
+
+                combined_text = "\n".join(text_parts)
+
+                processed_data.append({
+                    "title": title,
+                    "professor": prof_name,
+                    "semester": item.get("開講学期", ""),
+                    "text": combined_text,
+                    "raw": item
+                })
+
+            if len(processed_data) == 0:
+                print("Error: No valid course data found in CSV. Check column names or encoding.")
+                return None
+            
+            return {
+                "docs": processed_data,
+                "metadata": {
+                    "professors": list(known_professors)
+                }
+            }
+
+    except Exception as e:
+        print(f"Error loading CSV: {e}")
+        return None
 
 def load_course_db(db_path: str):
     """

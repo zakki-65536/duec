@@ -1,2 +1,3 @@
 langchain
 requests
+flask_cors

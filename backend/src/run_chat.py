@@ -8,7 +8,7 @@ def get_ai_response_one_shot(current_history, new_input):
     config = SimpleNamespace(
         model="dsasai/llama3-elyza-jp-8b",
         system="あなたは親切なAIです。",
-        prompt_template="bad",
+        prompt_template="default",
         history_size=12,
         no_langchain=False,
         rag=True,

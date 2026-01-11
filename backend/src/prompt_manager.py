@@ -25,7 +25,7 @@ def get_default_template() -> Dict:
     }
 
 
-def load_prompt_template(template_name: str, prompts_dir: str = "prompts") -> Optional[Dict]:
+def load_prompt_template(template_name: str, prompts_dir: str = "../prompts") -> Optional[Dict]:
     """
     JSONファイルからプロンプトテンプレートを読み込む。
     ファイルがない場合は、'default'であればハードコードされたデフォルトを返す。
@@ -41,13 +41,14 @@ def load_prompt_template(template_name: str, prompts_dir: str = "prompts") -> Op
             return None
 
     # 2. ファイルがない場合、defaultなら内部定義を返す
-    if template_name == "default":
+    if template_name == "default":  
+        print("Using built-in default prompt template.")
         return get_default_template()
     
     return None
 
 
-def list_available_prompts(prompts_dir: str = "prompts") -> List[str]:
+def list_available_prompts(prompts_dir: str = "../prompts") -> List[str]:
     """利用可能なプロンプトテンプレートの一覧を返す"""
     p = Path(prompts_dir)
     files = []
@@ -97,7 +98,7 @@ def get_langchain_prompt_template(template_dict: Dict) -> Optional[PromptTemplat
         return None
 
 
-def format_system_instruction(template_name: str, system_input: str = "", prompts_dir: str = "prompts") -> str:
+def format_system_instruction(template_name: str, system_input: str = "", prompts_dir: str = "/Users/toranosuke/Downloads/2025_M1_講義/M1秋/知識情報処理特論/duec/backend/prompts") -> str:
     """
     テンプレートを読み込み、ユーザー入力の追加指示(system_input)を埋め込んだ
     最終的なシステムプロンプト文字列を返す。
@@ -107,6 +108,7 @@ def format_system_instruction(template_name: str, system_input: str = "", prompt
     
     # テンプレートが見つからない場合のフォールバック
     if not template:
+        print(f"Warning: Prompt template '{template_name}' not found. Using default or raw input.")
         if template_name == "default":
              template = get_default_template()
         else:

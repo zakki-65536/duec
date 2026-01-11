@@ -6,7 +6,13 @@ import numpy as np
 import torch
 from FlagEmbedding import BGEM3FlagModel
 
-model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=True)
+# 保存先ファイル名
+EMBEDDINGS_CACHE_PATH = "syllabus_embeddings.npy"
+
+# デバイス設定
+device = "cuda" if torch.cuda.is_available() else "cpu"
+# インデックス作成時のみモデルが必要なので、初期化を遅延させる構成も検討可能
+model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=(device == "cuda"))
 
 # 外部ライブラリのインポート
 try:
@@ -243,18 +249,34 @@ def load_course_db(db_path: str):
 
 def prepare_tfidf_index(db_wrapper):
     """
-    名前は TF-IDF ですが、中身は BGE-M3 によるベクトル化を行います。
-    cli_chat.py からの呼び出し名に合わせました。
+    埋め込みベクトルを作成、またはキャッシュから読み込みます。
     """
-    if not db_wrapper or "docs" not in db_wrapper:
-        return None
+    if not db_wrapper or "docs" not in db_wrapper: return None
 
     docs = db_wrapper["docs"]
-    corpus_texts = [doc['text'] for doc in docs]
     
-    print(f"BGE-M3を使用してインデックスを作成中... (対象: {len(corpus_texts)}件)")
-    # 文書のベクトル化
+    # --- キャッシュの確認 ---
+    if os.path.exists(EMBEDDINGS_CACHE_PATH):
+        print(f"キャッシュファイル {EMBEDDINGS_CACHE_PATH} を読み込んでいます...")
+        embeddings = np.load(EMBEDDINGS_CACHE_PATH)
+        
+        # 件数が一致するか念のためチェック
+        if len(embeddings) == len(docs):
+            print("キャッシュからの読み込みに成功しました。")
+            return {"embeddings": embeddings, "docs": docs}
+        else:
+            print("CSVとキャッシュの件数が一致しません。再作成します。")
+
+    # --- キャッシュがない、または古い場合は新規作成 ---
+    corpus_texts = [doc['text'] for doc in docs]
+    print(f"BGE-M3を使用して新規インデックスを作成中... (対象: {len(corpus_texts)}件)")
+    
+    # ベクトル化の実行
     embeddings = model.encode(corpus_texts, batch_size=12, max_length=512)['dense_vecs']
+    
+    # ベクトルを保存
+    np.save(EMBEDDINGS_CACHE_PATH, embeddings)
+    print(f"埋め込みベクトルを {EMBEDDINGS_CACHE_PATH} に保存しました。")
     
     return {
         "embeddings": embeddings,

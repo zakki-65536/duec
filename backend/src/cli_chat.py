@@ -7,7 +7,7 @@ import argparse
 import subprocess
 import sys
 import shutil
-from rag import load_course_db, retrieve, build_prompt_with_rag, prepare_tfidf_index, retrieve_tfidf
+from rag import load_course_db_from_csv, load_course_db, retrieve, build_prompt_with_rag, prepare_tfidf_index, retrieve_tfidf
 from prompt_manager import load_prompt_template, list_available_prompts, format_system_instruction
 
 # Try to import langchain's Ollama wrapper if available
@@ -97,7 +97,14 @@ class ChatSession:
         self.rag_index = None
 
         if args.rag:
-            self.course_db_wrapper = load_course_db(args.rag_db)
+            print(f"Loading RAG DB from: {args.rag_db}")
+            
+            # 拡張子で分岐
+            if args.rag_db.endswith('.csv'):
+                print("Detected CSV format for RAG DB.")
+                self.course_db_wrapper = load_course_db_from_csv(args.rag_db)
+            else:
+                self.course_db_wrapper = load_course_db(args.rag_db)
             
             if self.course_db_wrapper is None:
                 print(f"RAG DB not found or invalid at {args.rag_db}; continuing without RAG.")

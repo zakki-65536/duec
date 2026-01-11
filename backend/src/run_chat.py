@@ -12,7 +12,7 @@ def get_ai_response_one_shot(current_history, new_input):
         history_size=12,
         no_langchain=False,
         rag=True,
-        rag_db="../../database/syllabus_インテリ.json", 
+        rag_db="//Users/toranosuke/Downloads/2025_M1_講義/M1秋/知識情報処理特論/duec/database/syllabus_all.csv", 
         rag_k=3,
         rag_method="tfidf"
     )

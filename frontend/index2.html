@@ -296,6 +296,10 @@
 
         // ====== イベント設定（PyScriptの addEventListener 相当） ======
         document.addEventListener("DOMContentLoaded", () => {
+          // 初期のシステムメッセージを表示して会話を開始しているように見せる
+          allMessages.push(["system", "こんにちは。私はDUECの履修相談システムです。どのような授業を探していますか？科目名・分野・学年・希望の特徴などを教えてください。"]);
+          render();
+
           const btn = document.getElementById("runBtn");
           btn.addEventListener("click", run);
 

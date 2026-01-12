@@ -257,15 +257,25 @@
         }
 
         // ====== PyScript の run() をそのままJSへ（async化） ======
+        let isComposing = false; // IME 等の確定中フラグ
+        let clearAfterComposition = false; // 送信後に compositionend で入力が再挿入されるのを防ぐ
+
         async function run(evt = null) {
+          if (isComposing) return; // IME確定中は送信しない
+
           const form = document.forms[0];
-          const message = form.message.value.trim();
+          const inputEl = form.message;
+          const message = inputEl.value.trim();
           if (!message) return;
 
           // 例URLと同様に、今回入力は history には入れず new_input に渡す
           const historyForApi = allMessages.slice();
 
-          form.message.value = "";
+          // 送信前に入力をクリアしておく（IME確定後に再挿入される場合があるため、
+          // compositionend で再挿入されたら再度クリアするフラグを立てる）
+          inputEl.value = "";
+          clearAfterComposition = true;
+
           allMessages.push(["user", message]);
           render();
 
@@ -279,6 +289,9 @@
 
           allMessages.push(["system", result]);
           render();
+
+          // 送信後は入力にフォーカスを戻す
+          inputEl.focus();
         }
 
         // ====== イベント設定（PyScriptの addEventListener 相当） ======
@@ -287,10 +300,28 @@
           btn.addEventListener("click", run);
 
           const inputEl = document.forms[0].message;
+
+          // composition イベントで IME の確定状態を追跡
+          inputEl.addEventListener('compositionstart', () => {
+            isComposing = true;
+            clearAfterComposition = false;
+          });
+          inputEl.addEventListener('compositionend', () => {
+            isComposing = false;
+            if (clearAfterComposition) {
+              inputEl.value = '';
+              clearAfterComposition = false;
+            }
+          });
+
           inputEl.addEventListener("keydown", (evt) => {
             if (evt.key === "Enter") {
-              run();
+              // ブラウザによっては evt.isComposing が true のことがある
+              if (evt.isComposing || isComposing) {
+                return;
+              }
               evt.preventDefault();
+              run();
             }
           });
         });

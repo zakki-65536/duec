@@ -11,8 +11,16 @@ EMBEDDINGS_CACHE_PATH = "syllabus_embeddings.npy"
 
 # デバイス設定
 device = "cuda" if torch.cuda.is_available() else "cpu"
-# インデックス作成時のみモデルが必要なので、初期化を遅延させる構成も検討可能
-model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=(device == "cuda"))
+# モデルの初期化を遅延させる: prepare_tfidf_index / retrieve_tfidf 実行時に初めてロードする
+_model = None
+
+def get_model():
+    """遅延初期化された埋め込みモデルを返す。初回呼び出しでロードする。"""
+    global _model
+    if _model is None:
+        print("Initializing BGEM3FlagModel (this may take a long time and download weights)...")
+        _model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=(device == "cuda"))
+    return _model
 
 # 外部ライブラリのインポート
 try:
@@ -271,8 +279,8 @@ def prepare_tfidf_index(db_wrapper):
     corpus_texts = [doc['text'] for doc in docs]
     print(f"BGE-M3を使用して新規インデックスを作成中... (対象: {len(corpus_texts)}件)")
     
-    # ベクトル化の実行
-    embeddings = model.encode(corpus_texts, batch_size=12, max_length=512)['dense_vecs']
+    # ベクトル化の実行（モデルは遅延初期化）
+    embeddings = get_model().encode(corpus_texts, batch_size=12, max_length=512)['dense_vecs']
     
     # ベクトルを保存
     np.save(EMBEDDINGS_CACHE_PATH, embeddings)
@@ -292,8 +300,8 @@ def retrieve_tfidf(query: str, index_data, k: int = 3):
     docs = index_data["docs"]
     embeddings = index_data["embeddings"]
 
-    # 1. ユーザーの質問をベクトル化
-    query_result = model.encode([query])['dense_vecs']
+    # 1. ユーザーの質問をベクトル化（モデルは遅延初期化）
+    query_result = get_model().encode([query])['dense_vecs']
     query_vec = query_result[0]
     
     # 2. コサイン類似度の計算

@@ -1,6 +1,11 @@
 # main.py
 from types import SimpleNamespace
 from cli_chat import ChatSession
+import os
+
+# プロジェクトルートを BASE_DIR として設定
+# run_chat.py は backend/src にあるので、3 階層上がプロジェクトルートになります
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 def get_ai_response_one_shot(current_history, new_input):
     # 1. 設定とモデルのロード（起動時に1回だけ行う）
@@ -12,7 +17,7 @@ def get_ai_response_one_shot(current_history, new_input):
         history_size=12,
         no_langchain=False,
         rag=True,
-        rag_db="//Users/toranosuke/Downloads/2025_M1_講義/M1秋/知識情報処理特論/duec/database/syllabus_all.csv", 
+        rag_db=os.path.join(BASE_DIR, "database", "syllabus_all.csv"), 
         rag_k=3,
         rag_method="tfidf"
     )

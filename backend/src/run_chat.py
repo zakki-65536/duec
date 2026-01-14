@@ -17,7 +17,7 @@ def get_ai_response_one_shot(current_history, new_input):
         history_size=12,
         no_langchain=False,
         rag=True,
-        rag_db=os.path.join(BASE_DIR, "database", "syllabus_all.csv"), 
+        rag_db=os.path.join(BASE_DIR, "duec/database", "syllabus_all.csv"), 
         rag_k=3,
         rag_method="tfidf"
     )

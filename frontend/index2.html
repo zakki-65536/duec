@@ -283,7 +283,8 @@
         }
 
         // GETリクエスト: /chat?history=...&new_input=...
-        async function doGet(history, newMessage, baseUrl = "http://127.0.0.1:5000/chat") {
+        // Note: backend runs on port 5001 to avoid macOS services on 5000
+        async function doGet(history, newMessage, baseUrl = "http://127.0.0.1:5001/chat") {
           const apiHistory = toApiHistory(history);
 
           // 例URLと同様に、history は JSON文字列で渡す

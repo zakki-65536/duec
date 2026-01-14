@@ -148,6 +148,7 @@ def load_course_db_from_csv(db_path: str):
                     "professor": prof_name,
                     "semester": item.get("開講学期", ""),
                     "text": combined_text,
+                    "period": item.get("曜日・時限", ""),
                     "raw": item
                 })
 
@@ -236,6 +237,7 @@ def load_course_db(db_path: str):
                     "professor": prof_name, # フィルタリング用に保持
                     "semester": item.get("開講学期", ""),
                     "text": combined_text,
+                    "period": item.get("曜日・時限", ""),
                     "raw": item
                 })
 

@@ -59,5 +59,6 @@ def add_cors_headers(resp):
     return resp
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Run on 127.0.0.1:5001 to avoid macOS services (AirPlay/Control Center)
+    app.run(host="127.0.0.1", port=5001, debug=True)
 

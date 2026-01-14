@@ -2,14 +2,48 @@ import json
 import os
 import re
 import csv
+import numpy as np
+import torch
+from FlagEmbedding import BGEM3FlagModel
 
-# scikit-learnがインストールされていない場合のエラーハンドリング
+# 保存先ファイル名
+EMBEDDINGS_CACHE_PATH = "syllabus_embeddings.npy"
+
+# デバイス設定
+device = "cuda" if torch.cuda.is_available() else "cpu"
+# モデルの初期化を遅延させる: prepare_tfidf_index / retrieve_tfidf 実行時に初めてロードする
+_model = None
+
+def get_model():
+    """遅延初期化された埋め込みモデルを返す。初回呼び出しでロードする。"""
+    global _model
+    if _model is None:
+        print("Initializing BGEM3FlagModel (this may take a long time and download weights)...")
+        _model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=(device == "cuda"))
+    return _model
+
+# 外部ライブラリのインポート
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
+
+try:
+    from rank_bm25 import BM25Okapi
+    BM25_AVAILABLE = True
+except ImportError:
+    BM25_AVAILABLE = False
+
+def simple_tokenize(text):
+    """
+    日本語の簡易トークナイザー。
+    正規表現を用いて、漢字、ひらがな、カタカナ、英数字の塊を抽出します。
+    """
+    # 記号を除去し、意味のある文字列の塊を抽出
+    tokens = re.findall(r'[A-Za-z0-9]+|[㐀-䶵一-龠々]+|[ぁ-ん]+|[ァ-ヶー]+', text)
+    return tokens
 
 def load_course_db_from_csv(db_path: str):
     """
@@ -114,6 +148,7 @@ def load_course_db_from_csv(db_path: str):
                     "professor": prof_name,
                     "semester": item.get("開講学期", ""),
                     "text": combined_text,
+                    "period": item.get("曜日・時限", ""),
                     "raw": item
                 })
 
@@ -202,6 +237,7 @@ def load_course_db(db_path: str):
                     "professor": prof_name, # フィルタリング用に保持
                     "semester": item.get("開講学期", ""),
                     "text": combined_text,
+                    "period": item.get("曜日・時限", ""),
                     "raw": item
                 })
 
@@ -223,148 +259,100 @@ def load_course_db(db_path: str):
 
 def prepare_tfidf_index(db_wrapper):
     """
-    TF-IDFインデックスを作成します。
-    引数 db_wrapper は load_course_db の戻り値 (dict) を期待します。
+    埋め込みベクトルを作成、またはキャッシュから読み込みます。
     """
-    if not SKLEARN_AVAILABLE:
-        print("scikit-learn not found. TF-IDF indexing skipped.")
-        return None
+    if not db_wrapper or "docs" not in db_wrapper: return None
 
     docs = db_wrapper["docs"]
-    metadata = db_wrapper.get("metadata", {})
+    
+    # --- キャッシュの確認 ---
+    if os.path.exists(EMBEDDINGS_CACHE_PATH):
+        print(f"キャッシュファイル {EMBEDDINGS_CACHE_PATH} を読み込んでいます...")
+        embeddings = np.load(EMBEDDINGS_CACHE_PATH)
+        
+        # 件数が一致するか念のためチェック
+        if len(embeddings) == len(docs):
+            print("キャッシュからの読み込みに成功しました。")
+            return {"embeddings": embeddings, "docs": docs}
+        else:
+            print("CSVとキャッシュの件数が一致しません。再作成します。")
 
-    # 検索対象テキスト
-    corpus = [doc.get('text', '') for doc in docs]
-
-    # 日本語対応: 文字単位 n-gram (2~3文字)
-    vectorizer = TfidfVectorizer(analyzer='char', ngram_range=(2, 3))
-    tfidf_matrix = vectorizer.fit_transform(corpus)
-
+    # --- キャッシュがない、または古い場合は新規作成 ---
+    corpus_texts = [doc['text'] for doc in docs]
+    print(f"BGE-M3を使用して新規インデックスを作成中... (対象: {len(corpus_texts)}件)")
+    
+    # ベクトル化の実行（モデルは遅延初期化）
+    embeddings = get_model().encode(corpus_texts, batch_size=12, max_length=512)['dense_vecs']
+    
+    # ベクトルを保存
+    np.save(EMBEDDINGS_CACHE_PATH, embeddings)
+    print(f"埋め込みベクトルを {EMBEDDINGS_CACHE_PATH} に保存しました。")
+    
     return {
-        "vectorizer": vectorizer,
-        "matrix": tfidf_matrix,
-        "docs": docs,
-        "metadata": metadata
+        "embeddings": embeddings,
+        "docs": docs
     }
 
 def retrieve_tfidf(query: str, index_data, k: int = 3):
     """
-    メタデータフィルタリング付きの検索を行います。
-    1. クエリ内に教授名が含まれていれば、その教授の全科目を優先的に取得します。
-    2. それ以外の場合は、TF-IDF類似度で上位 k 件を取得します。
+    ハイブリッド検索ロジック (BGE-M3ベクトル検索 + 条件フィルタ)
     """
-    if not index_data or not SKLEARN_AVAILABLE:
-        return []
+    if not index_data: return []
 
-    vectorizer = index_data["vectorizer"]
-    matrix = index_data["matrix"]
     docs = index_data["docs"]
-    professors = index_data["metadata"].get("professors", [])
+    embeddings = index_data["embeddings"]
 
-    # --- 戦略1: メタデータフィルタリング（教授名検索） ---
-    # クエリ内の空白を除去してマッチング精度を上げる
-    normalized_query = query.replace(" ", "").replace("　", "")
+    # 1. ユーザーの質問をベクトル化（モデルは遅延初期化）
+    query_result = get_model().encode([query])['dense_vecs']
+    query_vec = query_result[0]
     
-    matched_professors = []
-    for prof in professors:
-        # 教授名がクエリに含まれているかチェック
-        # (誤検知を防ぐため、教授名がある程度の長さ以上であることを想定、または完全一致推奨だが、ここでは簡易包含判定)
-        if prof in normalized_query and len(prof) >= 2:
-            matched_professors.append(prof)
+    # 2. コサイン類似度の計算
+    scores = np.dot(embeddings, query_vec) / (np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_vec))
     
-    # 教授名がヒットした場合の特別処理
-    if matched_professors:
-        filtered_results = []
-        seen_titles = set()
-        
-        # ヒットした教授の授業をすべて抽出
-        for doc in docs:
-            doc_prof = doc.get("professor", "").replace(" ", "").replace("　", "")
-            # 抽出した教授リストのいずれかに一致すれば採用
-            if any(p == doc_prof for p in matched_professors):
-                filtered_results.append(doc)
-                seen_titles.add(doc["title"])
-        
-        # もし教授名フィルタだけで十分な数が取れれば、それを返す（kを無視して全件返す）
-        # これにより「全ての授業を教えて」に対応可能
-        if filtered_results:
-            print(f"[Debug] Filtered by professor: {matched_professors} -> {len(filtered_results)} hits")
-            return filtered_results
+    # 3. 条件による調整（教授名フィルタ、時限ブースト）
+    exclude_prof = None
+    if any(x in query for x in ["以外", "でない", "除いて"]):
+        prof_match = re.search(r'([一-龠]{2,4})教授', query)
+        if prof_match:
+            exclude_prof = prof_match.group(1)
 
-    # --- 戦略2: 通常のTF-IDFベクトル検索 ---
-    # フィルタでヒットしなかった、あるいは追加で必要な場合
-    query_vec = vectorizer.transform([query])
-    similarities = cosine_similarity(query_vec, matrix).flatten()
-    
-    # 類似度順にソート
-    top_indices = similarities.argsort()[::-1][:k]
-
+    # スコア順にソートして候補を抽出
+    sorted_indices = np.argsort(scores)[::-1]
     results = []
-    for idx in top_indices:
-        if similarities[idx] > 0:
-            results.append(docs[idx])
     
+    for idx in sorted_indices:
+        doc = docs[idx]
+        # 否定条件の適用
+        if exclude_prof and exclude_prof in doc['professor']:
+            continue
+            
+        # 「1限」などの時限キーワードの一致による加点
+        time_keywords = ["1限", "１限", "2限", "２限", "3限", "３限", "4限", "４限", "5限", "５限"]
+        for tk in time_keywords:
+            if tk in query and tk[0] in doc['period']:
+                scores[idx] += 0.1 # スコアを底上げ
+        
+        results.append(doc)
+        if len(results) >= k:
+            break
+            
     return results
 
-def retrieve(query: str, db_wrapper, k: int = 3):
-    """
-    scikit-learnがない場合の簡易検索（フォールバック用）。
-    こちらも構造変更に合わせて修正。
-    """
-    # db_wrapperが辞書ならdocsを取り出す、リストならそのまま（互換性）
-    if isinstance(db_wrapper, dict):
-        docs = db_wrapper.get("docs", [])
-    else:
-        docs = db_wrapper
-
-    scored_docs = []
-    query_terms = query.replace("　", " ").split() 
-
-    for doc in docs:
-        score = 0
-        content = doc.get('text', '')
-        
-        # クエリそのものが含まれているか
-        if query in content:
-            score += 10
-        
-        for term in query_terms:
-            if term in content:
-                score += 1
-
-        if score > 0:
-            scored_docs.append((score, doc))
-
-    scored_docs.sort(key=lambda x: x[0], reverse=True)
-    return [item[1] for item in scored_docs[:k]]
-
 def build_prompt_with_rag(system: str, history: list, user_input: str, retrieved_docs: list) -> str:
-    """
-    検索結果(retrieved_docs)をプロンプトに組み込みます。
-    """
-    pieces = []
-    
-    if system:
-        pieces.append(f"{system}\n")
-
+    """既存のプロンプト形式を維持"""
+    pieces = [f"{system}\n"] if system else []
     if retrieved_docs:
-        pieces.append("以下はユーザーの質問に関連する講義シラバス情報です。")
-        pieces.append("質問が「全ての授業」などのリスト要求であれば、検索された全ての情報を要約して答えてください。\n")
-        pieces.append("--- 参考情報 (Syllabus) ---")
+        pieces.append("【関連する講義情報】")
         for i, doc in enumerate(retrieved_docs, 1):
-            text = doc.get('text', '')
-            pieces.append(f"【情報{i}】\n{text}\n")
-        pieces.append("---------------------------\n")
-    else:
-        pieces.append("(関連する参考情報は見つかりませんでした。)\n")
-
-    pieces.append("Conversation:\n")
+            pieces.append(f"講義{i}: {doc['text'][:300]}") # 長すぎないよう制限
+        pieces.append("-" * 20 + "\n")
+    
+    pieces.append("これまでの対話:")
     for role, text in history:
-        if role == "user":
-            pieces.append(f"User: {text}\n")
-        else:
-            pieces.append(f"Assistant: {text}\n")
-    
+        pieces.append(f"{role.capitalize()}: {text}")
     pieces.append(f"User: {user_input}\nAssistant:")
-    
     return "\n".join(pieces)
+
+def retrieve(query: str, db_wrapper, k: int = 3):
+    """フォールバック用"""
+    return retrieve_tfidf(query, db_wrapper, k)

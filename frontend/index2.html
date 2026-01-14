@@ -173,6 +173,34 @@
         .message { max-width: 82%; padding: 10px; }
       }
 
+      /* ローディング表示 */
+      .loading {
+        position: absolute;
+        right: 24px;
+        bottom: 84px;
+        display: none;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: rgba(255,255,255,0.96);
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+        font-size: 14px;
+        color: #222;
+        z-index: 30;
+      }
+
+      .loading .spinner {
+        width: 16px;
+        height: 16px;
+        border: 3px solid #e6e6e6;
+        border-top-color: #6a1b9a;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin { to { transform: rotate(360deg); } }
+
     </style>
   </head>
   <body>
@@ -182,6 +210,10 @@
 
     <main>
       <div id="output" aria-live="polite"></div>
+      <div id="loading" class="loading" role="status" aria-live="polite" aria-hidden="true">
+        <div class="spinner" aria-hidden="true"></div>
+        <div>応答を生成中…</div>
+      </div>
       <form onsubmit="return false;">
         <img src="assets/img/usagi.png" alt="うさぎ" class="character">
         <div class="input">
@@ -196,6 +228,20 @@
     <script>
         // ====== PyScript の allMessages をそのままJSへ ======
         const allMessages = [];
+
+        // ローディング表示の制御
+        function showLoading(state) {
+          const loadingEl = document.getElementById("loading");
+          const btn = document.getElementById("runBtn");
+          if (loadingEl) {
+            loadingEl.style.display = state ? "flex" : "none";
+            loadingEl.setAttribute('aria-hidden', state ? 'false' : 'true');
+          }
+          if (btn) {
+            btn.disabled = !!state;
+            if (state) btn.classList.add('disabled'); else btn.classList.remove('disabled');
+          }
+        }
 
         function render() {
           const out = document.getElementById("output");
@@ -237,7 +283,8 @@
         }
 
         // GETリクエスト: /chat?history=...&new_input=...
-        async function doGet(history, newMessage, baseUrl = "http://127.0.0.1:5000/chat") {
+        // Note: backend runs on port 5001 to avoid macOS services on 5000
+        async function doGet(history, newMessage, baseUrl = "http://127.0.0.1:5001/chat") {
           const apiHistory = toApiHistory(history);
 
           // 例URLと同様に、history は JSON文字列で渡す
@@ -257,40 +304,81 @@
         }
 
         // ====== PyScript の run() をそのままJSへ（async化） ======
+        let isComposing = false; // IME 等の確定中フラグ
+        let clearAfterComposition = false; // 送信後に compositionend で入力が再挿入されるのを防ぐ
+
         async function run(evt = null) {
+          if (isComposing) return; // IME確定中は送信しない
+
           const form = document.forms[0];
-          const message = form.message.value.trim();
+          const inputEl = form.message;
+          const message = inputEl.value.trim();
           if (!message) return;
 
           // 例URLと同様に、今回入力は history には入れず new_input に渡す
           const historyForApi = allMessages.slice();
 
-          form.message.value = "";
+          // 送信前に入力をクリアしておく（IME確定後に再挿入される場合があるため、
+          // compositionend で再挿入されたら再度クリアするフラグを立てる）
+          inputEl.value = "";
+          clearAfterComposition = true;
+
           allMessages.push(["user", message]);
           render();
 
-          let result;
-          try {
-            // APIが返すテキストを result に格納
-            result = await doGet(historyForApi, message);
-          } catch (e) {
-            result = "システムエラー: " + (e && e.message ? e.message : String(e));
-          }
+            // ローディング表示をON
+            showLoading(true);
 
-          allMessages.push(["system", result]);
-          render();
+            let result;
+            try {
+              // APIが返すテキストを result に格納
+              result = await doGet(historyForApi, message);
+            } catch (e) {
+              result = "システムエラー: " + (e && e.message ? e.message : String(e));
+            } finally {
+              // 必ずローディングをOFF
+              showLoading(false);
+            }
+
+            allMessages.push(["system", result]);
+            render();
+
+          // 送信後は入力にフォーカスを戻す
+          inputEl.focus();
         }
 
         // ====== イベント設定（PyScriptの addEventListener 相当） ======
         document.addEventListener("DOMContentLoaded", () => {
+          // 初期のシステムメッセージを表示して会話を開始しているように見せる
+          allMessages.push(["system", "こんにちは。私はDUECの履修相談システムです。どのような授業を探していますか？科目名・分野・学年・希望の特徴などを教えてください。"]);
+          render();
+
           const btn = document.getElementById("runBtn");
           btn.addEventListener("click", run);
 
           const inputEl = document.forms[0].message;
+
+          // composition イベントで IME の確定状態を追跡
+          inputEl.addEventListener('compositionstart', () => {
+            isComposing = true;
+            clearAfterComposition = false;
+          });
+          inputEl.addEventListener('compositionend', () => {
+            isComposing = false;
+            if (clearAfterComposition) {
+              inputEl.value = '';
+              clearAfterComposition = false;
+            }
+          });
+
           inputEl.addEventListener("keydown", (evt) => {
             if (evt.key === "Enter") {
-              run();
+              // ブラウザによっては evt.isComposing が true のことがある
+              if (evt.isComposing || isComposing) {
+                return;
+              }
               evt.preventDefault();
+              run();
             }
           });
         });

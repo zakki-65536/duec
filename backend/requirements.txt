@@ -1,3 +1,5 @@
 langchain
 requests
 flask_cors
+rank-bm25
+FlagEmbedding
